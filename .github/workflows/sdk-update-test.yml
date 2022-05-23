@@ -1,0 +1,102 @@
+name: test-docs-examples
+
+on:
+  repository_dispatch:
+    types: [sdk-update]
+
+jobs:
+  workshop:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Use Node.js 16.x
+        uses: actions/setup-node@v1
+        with:
+          node-version: 16.x
+      - uses: datamonsters/replace-action@v2
+        with:
+         files: 'code-examples/workshop/package.json'
+         replacements: '${{ github.event.client_payload.previousTag }}=${{ github.event.client_payload.latestTag }}'
+      - name: Test style conventions
+        working-directory: code-examples/workshop
+        run: |
+          yarn install --frozen
+          yarn lint
+
+      - name: Run tests
+        timeout-minutes: 60
+        working-directory: code-examples/workshop
+        env:
+          NODE_OPTIONS: --unhandled-rejections=strict
+          FAUCET_SEED: ${{ secrets.PEREGRINE_FAUCET_SEED }}
+        run: |
+          yarn install --frozen
+          yarn run ts-node test.ts
+
+  core_features:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v1
+      - uses: datamonsters/replace-action@v2
+        with:
+          files: 'code-examples/core_features/package.json'
+          replacements: '${{ github.event.client_payload.previousTag }}=${{ github.event.client_payload.latestTag }}'
+      - name: Test style conventions
+        working-directory: code-examples/core_features
+        run: |
+          yarn install --frozen
+          yarn lint
+
+      - name: Run tests
+        timeout-minutes: 60
+        working-directory: code-examples/core_features
+        env:
+          NODE_OPTIONS: --unhandled-rejections=strict
+          FAUCET_SEED: ${{ secrets.PEREGRINE_FAUCET_SEED }}
+        run: |
+          yarn install --frozen
+          yarn run ts-node run_core_features.ts
+
+  create_pull_request:
+    runs-on: ubuntu-latest
+    needs: [workshop, core_features]
+    if: success()
+    steps:
+      - uses: datamonsters/replace-action@v2
+        with:
+          files: 'docs/develop/workshop/00-welcome.md,docs/develop/workshop/01-setup.md'
+          replacements: '${{ github.event.client_payload.previousTag }}=${{ github.event.client_payload.latestTag }}'
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v4
+        with:
+          add-paths: |
+            code-examples/workshop/package.json
+            code-examples/core_features/package.json
+            docs/develop.workshop/*.md
+  create_issue:
+    runs-on: ubuntu-latest
+    needs: [workshop, core_features]
+    if: failure()
+    steps:
+      - name: issue-bot
+        uses: imjohnbo/issue-bot@v3
+        with:
+          labels: |
+            :memo:  documentation
+            \U0001F4DA release
+            🧰 sdk
+          pinned: false
+          close-previous: true
+          linked-comments: true
+          title: 'new sdk ${{ github.event.client_payload.latestTag }} is incompatible with docs examples'
+          repository: ticket
+          body: |-
+            ## Incompatibilities detected
+            A [webhook test workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) using the latest sdk against docs examples has failed.
+            Introduce fixes to recover compatibility.
+            Detail error log can be seen from the above link
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
