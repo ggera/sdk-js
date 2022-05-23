@@ -2,6 +2,8 @@ name: Dispatch test on docs repo
 on:
   repository_dispatch:
   push:
+    branches:
+      - main
     tags:
       - '*'
 jobs:
